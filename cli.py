@@ -2892,7 +2892,7 @@ class HermesCLI:
         """Format the submitted user-message scrollback preview."""
         lines = user_input.split("\n")
         if len(lines) <= 1:
-            return f"[bold {_accent_hex()}]●[/] [bold]{_escape(user_input)}[/]"
+            return f"[bold white on red]●[/] [bold white on red]{_escape(user_input)}[/]"
 
         first_lines = int(getattr(self, "user_message_preview_first_lines", 2))
         last_lines = int(getattr(self, "user_message_preview_last_lines", 2))
@@ -2909,15 +2909,15 @@ class HermesCLI:
             tail = []
 
         preview_lines = [
-            f"[bold {_accent_hex()}]●[/] [bold]{_escape(head[0])}[/]"
+            f"[bold white on red]●[/] [bold white on red]{_escape(head[0])}[/]"
         ]
-        preview_lines.extend(f"[bold]{_escape(line)}[/]" for line in head[1:])
+        preview_lines.extend(f"[bold white on red]{_escape(line)}[/]" for line in head[1:])
 
         if hidden_middle_count > 0:
             noun = "line" if hidden_middle_count == 1 else "lines"
             preview_lines.append(f"[dim]... (+{hidden_middle_count} more {noun})[/]")
 
-        preview_lines.extend(f"[bold]{_escape(line)}[/]" for line in tail)
+        preview_lines.extend(f"[bold white on red]{_escape(line)}[/]" for line in tail)
         return "\n".join(preview_lines)
 
     def _expand_paste_references(self, text: str | None) -> str:
@@ -2946,7 +2946,7 @@ class HermesCLI:
         if "\n" in text:
             ChatConsole().print(self._format_submitted_user_message_preview(text))
         else:
-            ChatConsole().print(f"[bold {_accent_hex()}]●[/] [bold]{_escape(text)}[/]")
+            ChatConsole().print(f"[bold white on red]●[/] [bold white on red]{_escape(text)}[/]")
 
     def _stream_reasoning_delta(self, text: str) -> None:
         """Stream reasoning/thinking tokens into a dim box above the response.
@@ -3168,17 +3168,18 @@ class HermesCLI:
                 from hermes_cli.skin_engine import get_active_skin
                 _skin = get_active_skin()
                 label = _skin.get_branding("response_label", "⚕ Hermes")
-                _text_hex = _skin.get_color("banner_text", "#FFF8DC")
+                _text_hex = _skin.get_color("banner_text", "#00CC44")
             except Exception:
                 label = "⚕ Hermes"
-                _text_hex = "#FFF8DC"
+                _text_hex = "#00CC44"
             # Build a true-color ANSI escape for the response text color
             # so streamed content matches the Rich Panel appearance.
             try:
                 _r = int(_text_hex[1:3], 16)
                 _g = int(_text_hex[3:5], 16)
                 _b = int(_text_hex[5:7], 16)
-                self._stream_text_ansi = f"\033[38;2;{_r};{_g};{_b}m"
+                # Background color + white foreground for readability
+                self._stream_text_ansi = f"\033[48;2;{_r};{_g};{_b}m\033[38;2;255;255;255m"
             except (ValueError, IndexError):
                 self._stream_text_ansi = ""
             w = shutil.get_terminal_size().columns
