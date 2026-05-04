@@ -5,6 +5,7 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
+import { useTurnSelector } from '../app/turnStore.js'
 import { $uiState } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { FULL_RENDER_TAIL_ITEMS } from '../config/limits.js'
@@ -15,7 +16,9 @@ import {
   inputVisualHeight,
   stableComposerColumns
 } from '../lib/inputMetrics.js'
+import { appendToolShelfMessage } from '../lib/liveProgress.js'
 import { PerfPane } from '../lib/perfPane.js'
+import type { Msg } from '../types.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
@@ -27,6 +30,16 @@ import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+
+const SPLIT_MIN_COLS = 120
+
+function isToolMsg(msg: Msg): boolean {
+  return msg.kind === 'trail' || msg.role === 'tool'
+}
+
+function groupStreamSegments(segments: Msg[]): Msg[] {
+  return segments.reduce<Msg[]>((acc, msg) => appendToolShelfMessage(acc, msg), [])
+}
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -56,9 +69,10 @@ const PromptPrefix = memo(function PromptPrefix({
 const TranscriptPane = memo(function TranscriptPane({
   actions,
   composer,
+  hideToolMsgs = false,
   progress,
   transcript
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'>) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'> & { hideToolMsgs?: boolean }) {
   const ui = useStore($uiState)
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
@@ -94,30 +108,32 @@ const TranscriptPane = memo(function TranscriptPane({
           {transcript.virtualHistory.topSpacer > 0 ? <Box height={transcript.virtualHistory.topSpacer} /> : null}
 
           {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
-            <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
-              {row.msg.kind === 'intro' ? (
-                <Box flexDirection="column" paddingTop={1}>
-                  <Banner t={ui.theme} />
+            hideToolMsgs && isToolMsg(row.msg) ? null : (
+              <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
+                {row.msg.kind === 'intro' ? (
+                  <Box flexDirection="column" paddingTop={1}>
+                    <Banner t={ui.theme} />
 
-                  {row.msg.info && <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />}
-                </Box>
-              ) : row.msg.kind === 'panel' && row.msg.panelData ? (
-                <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
-              ) : (
-                <MessageLine
-                  cols={composer.cols}
-                  compact={ui.compact}
-                  detailsMode={ui.detailsMode}
-                  detailsModeCommandOverride={ui.detailsModeCommandOverride}
-                  limitHistoryRender={row.index < transcript.historyItems.length - FULL_RENDER_TAIL_ITEMS}
-                  msg={row.msg}
-                  sections={ui.sections}
-                  t={ui.theme}
-                />
-              )}
+                    {row.msg.info && <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />}
+                  </Box>
+                ) : row.msg.kind === 'panel' && row.msg.panelData ? (
+                  <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
+                ) : (
+                  <MessageLine
+                    cols={composer.cols}
+                    compact={ui.compact}
+                    detailsMode={ui.detailsMode}
+                    detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                    limitHistoryRender={row.index < transcript.historyItems.length - FULL_RENDER_TAIL_ITEMS}
+                    msg={row.msg}
+                    sections={ui.sections}
+                    t={ui.theme}
+                  />
+                )}
 
-              {row.index === lastUserIdx && <LiveTodoPanel />}
-            </Box>
+                {row.index === lastUserIdx && <LiveTodoPanel />}
+              </Box>
+            )
           ))}
 
           {transcript.virtualHistory.bottomSpacer > 0 ? <Box height={transcript.virtualHistory.bottomSpacer} /> : null}
@@ -144,6 +160,78 @@ const TranscriptPane = memo(function TranscriptPane({
         scrollRef={transcript.scrollRef}
       />
     </>
+  )
+})
+
+const ToolPane = memo(function ToolPane({
+  composer,
+  progress,
+  transcript,
+  width
+}: Pick<AppLayoutProps, 'composer' | 'progress' | 'transcript'> & { width: number }) {
+  const ui = useStore($uiState)
+  const activeTools = useTurnSelector(state => state.tools)
+  const streamSegments = useTurnSelector(state => state.streamSegments)
+  const panelCols = width - 2
+
+  const toolRows = transcript.virtualRows.filter(row => isToolMsg(row.msg))
+  const liveToolSegments = groupStreamSegments(streamSegments).filter(msg => isToolMsg(msg))
+
+  return (
+    <Box borderColor={ui.theme.color.muted} borderRight borderStyle="single" flexDirection="column" width={width}>
+      <NoSelect flexShrink={0} paddingX={1}>
+        <Text color={ui.theme.color.muted}>Tools & Commands</Text>
+      </NoSelect>
+
+      <ScrollBox flexDirection="column" flexGrow={1} flexShrink={1} stickyScroll>
+        <Box flexDirection="column" paddingX={1}>
+          {toolRows.map(row => (
+            <Box flexDirection="column" key={row.key}>
+              <MessageLine
+                cols={panelCols}
+                compact={ui.compact}
+                detailsMode={ui.detailsMode}
+                detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                limitHistoryRender={row.index < transcript.historyItems.length - FULL_RENDER_TAIL_ITEMS}
+                msg={row.msg}
+                sections={ui.sections}
+                t={ui.theme}
+              />
+            </Box>
+          ))}
+
+          {liveToolSegments.map((msg, i) => (
+            <MessageLine
+              cols={panelCols}
+              compact={ui.compact}
+              detailsMode={ui.detailsMode}
+              detailsModeCommandOverride={ui.detailsModeCommandOverride}
+              key={`live:${i}`}
+              msg={msg}
+              sections={ui.sections}
+              t={ui.theme}
+            />
+          ))}
+
+          {!!activeTools.length && (
+            <MessageLine
+              cols={panelCols}
+              compact={ui.compact}
+              detailsMode={ui.detailsMode}
+              detailsModeCommandOverride={ui.detailsModeCommandOverride}
+              msg={{ kind: 'trail', role: 'system', text: '' }}
+              sections={ui.sections}
+              t={ui.theme}
+              tools={activeTools}
+            />
+          )}
+
+          {!toolRows.length && !liveToolSegments.length && !activeTools.length && (
+            <Text color={ui.theme.color.muted}>No tool calls yet</Text>
+          )}
+        </Box>
+      </ScrollBox>
+    </Box>
   )
 })
 
@@ -372,41 +460,93 @@ export const AppLayout = memo(function AppLayout({
   const Shell = INLINE_MODE ? Fragment : AlternateScreen
   const shellProps = INLINE_MODE ? {} : { mouseTracking }
 
+  const splitMode = !INLINE_MODE && composer.cols >= SPLIT_MIN_COLS
+
+  // In split mode, the left pane takes ~38% of columns and the right gets the rest.
+  const leftCols = splitMode ? Math.floor(composer.cols * 0.38) : 0
+  const rightCols = splitMode ? composer.cols - leftCols : composer.cols
+
+  const splitComposer = splitMode ? { ...composer, cols: rightCols } : composer
+
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
-        <Box flexDirection="row" flexGrow={1}>
-          {overlay.agents ? (
-            <PerfPane id="agents">
-              <AgentsOverlayPane />
+        {splitMode && !overlay.agents ? (
+          // Split layout: tool pane on left, chat + composer on right
+          <Box flexDirection="row" flexGrow={1}>
+            <PerfPane id="tools">
+              <ToolPane composer={splitComposer} progress={progress} transcript={transcript} width={leftCols} />
             </PerfPane>
-          ) : (
-            <PerfPane id="transcript">
-              <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-            </PerfPane>
-          )}
-        </Box>
 
-        {!overlay.agents && (
+            <Box flexDirection="column" flexGrow={1}>
+              <PerfPane id="transcript">
+                <TranscriptPane
+                  actions={actions}
+                  composer={splitComposer}
+                  hideToolMsgs
+                  progress={progress}
+                  transcript={transcript}
+                />
+              </PerfPane>
+
+              <PerfPane id="prompt">
+                <PromptZone
+                  cols={rightCols}
+                  onApprovalChoice={actions.answerApproval}
+                  onClarifyAnswer={actions.answerClarify}
+                  onSecretSubmit={actions.answerSecret}
+                  onSudoSubmit={actions.answerSudo}
+                />
+              </PerfPane>
+
+              <PerfPane id="composer">
+                <ComposerPane actions={actions} composer={splitComposer} status={status} />
+              </PerfPane>
+
+              {SHOW_FPS && (
+                <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
+                  <FpsOverlay t={ui.theme} />
+                </Box>
+              )}
+            </Box>
+          </Box>
+        ) : (
+          // Single-column layout (narrow terminal or agents overlay)
           <>
-            <PerfPane id="prompt">
-              <PromptZone
-                cols={composer.cols}
-                onApprovalChoice={actions.answerApproval}
-                onClarifyAnswer={actions.answerClarify}
-                onSecretSubmit={actions.answerSecret}
-                onSudoSubmit={actions.answerSudo}
-              />
-            </PerfPane>
+            <Box flexDirection="row" flexGrow={1}>
+              {overlay.agents ? (
+                <PerfPane id="agents">
+                  <AgentsOverlayPane />
+                </PerfPane>
+              ) : (
+                <PerfPane id="transcript">
+                  <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+                </PerfPane>
+              )}
+            </Box>
 
-            <PerfPane id="composer">
-              <ComposerPane actions={actions} composer={composer} status={status} />
-            </PerfPane>
+            {!overlay.agents && (
+              <>
+                <PerfPane id="prompt">
+                  <PromptZone
+                    cols={composer.cols}
+                    onApprovalChoice={actions.answerApproval}
+                    onClarifyAnswer={actions.answerClarify}
+                    onSecretSubmit={actions.answerSecret}
+                    onSudoSubmit={actions.answerSudo}
+                  />
+                </PerfPane>
 
-            {SHOW_FPS && (
-              <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
-                <FpsOverlay t={ui.theme} />
-              </Box>
+                <PerfPane id="composer">
+                  <ComposerPane actions={actions} composer={composer} status={status} />
+                </PerfPane>
+
+                {SHOW_FPS && (
+                  <Box flexShrink={0} justifyContent="flex-end" paddingRight={1}>
+                    <FpsOverlay t={ui.theme} />
+                  </Box>
+                )}
+              </>
             )}
           </>
         )}
