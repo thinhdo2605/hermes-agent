@@ -94,7 +94,7 @@ export const MessageLine = memo(function MessageLine({
     )
   }
 
-  const { body, glyph, prefix } = ROLE[msg.role](t)
+  const { bg, body, glyph, prefix } = ROLE[msg.role](t)
 
   const showDetails =
     (toolsMode !== 'hidden' && Boolean(msg.tools?.length)) || (thinkingMode !== 'hidden' && Boolean(thinking))
@@ -113,9 +113,9 @@ export const MessageLine = memo(function MessageLine({
         // Incremental markdown: split at the last stable block boundary so
         // only the in-flight tail re-tokenizes per delta. See
         // streamingMarkdown.tsx for the cost model.
-        <StreamingMd compact={compact} t={t} text={boundedLiveRenderText(msg.text)} />
+        <StreamingMd color={body} compact={compact} t={t} text={boundedLiveRenderText(msg.text)} />
       ) : (
-        <Md compact={compact} t={t} text={limitHistoryRender ? boundedHistoryRenderText(msg.text) : msg.text} />
+        <Md color={body} compact={compact} t={t} text={limitHistoryRender ? boundedHistoryRenderText(msg.text) : msg.text} />
       )
     }
 

@@ -139,7 +139,15 @@ class SkinConfig:
     banner_hero: str = ""    # Rich-markup hero art (replaces HERMES_CADUCEUS)
 
     def get_color(self, key: str, fallback: str = "") -> str:
-        """Get a color value with fallback."""
+        """Get a color value with fallback. User config overrides skin defaults."""
+        try:
+            from cli import load_cli_config
+            cfg = load_cli_config()
+            user_color = cfg.get("display", {}).get(key)
+            if user_color:
+                return user_color
+        except Exception:
+            pass
         return self.colors.get(key, fallback)
 
     def get_spinner_wings(self) -> List[Tuple[str, str]]:

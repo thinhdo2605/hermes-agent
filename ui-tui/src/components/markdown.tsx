@@ -364,7 +364,7 @@ const cacheSet = (b: Map<string, ReactNode[]>, key: string, v: ReactNode[]) => {
   }
 }
 
-function MdImpl({ compact, t, text }: MdProps) {
+function MdImpl({ color, compact, t, text }: MdProps) {
   const nodes = useMemo(() => {
     const bucket = cacheBucket(t)
     const cacheKey = `${compact ? '1' : '0'}|${text}`
@@ -827,7 +827,7 @@ function MdImpl({ compact, t, text }: MdProps) {
     return nodes
   }, [compact, t, text])
 
-  return <Box flexDirection="column">{nodes}</Box>
+  return <Box flexDirection="column"><Text color={color}>{nodes}</Text></Box>
 }
 
 export const Md = memo(MdImpl)
@@ -835,6 +835,7 @@ export const Md = memo(MdImpl)
 type Kind = 'blank' | 'code' | 'heading' | 'list' | 'paragraph' | 'quote' | 'rule' | 'table' | null
 
 interface MdProps {
+  color?: string
   compact?: boolean
   t: Theme
   text: string

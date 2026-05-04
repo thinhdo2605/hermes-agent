@@ -1909,6 +1909,18 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
     return text or "What do you see in this image?"
 
 
+def _content_is_empty(content) -> bool:
+    if content is None:
+        return True
+    if isinstance(content, list):
+        return not any(
+            (p.get("text") or "").strip()
+            for p in content
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
+    return not str(content).strip()
+
+
 def _history_to_messages(history: list[dict]) -> list[dict]:
     messages = []
     tool_call_args = {}
@@ -1929,7 +1941,7 @@ def _history_to_messages(history: list[dict]) -> list[dict]:
                     except (json.JSONDecodeError, TypeError):
                         args = {}
                     tool_call_args[tc_id] = (fn["name"], args)
-            if not (m.get("content") or "").strip():
+            if _content_is_empty(m.get("content")):
                 continue
         if role == "tool":
             tc_id = m.get("tool_call_id", "")
@@ -1940,7 +1952,7 @@ def _history_to_messages(history: list[dict]) -> list[dict]:
                 {"role": "tool", "name": name, "context": _tool_ctx(name, args)}
             )
             continue
-        if not (m.get("content") or "").strip():
+        if _content_is_empty(m.get("content")):
             continue
         messages.append({"role": role, "text": m.get("content") or ""})
 

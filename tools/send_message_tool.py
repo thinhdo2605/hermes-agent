@@ -204,6 +204,8 @@ def _handle_send(args):
         return tool_error("Interrupted")
 
     try:
+        from hermes_cli.env_loader import load_hermes_dotenv
+        load_hermes_dotenv()
         from gateway.config import load_gateway_config, Platform
         config = load_gateway_config()
     except Exception as e:
